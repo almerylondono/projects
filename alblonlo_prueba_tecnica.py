@@ -1,5 +1,5 @@
 # *****************************************************************************************************
-#                 RAPPIPAY
+#                 Prueba tecnica
 # SCRIPT ID           : alblonlo_prueba_tecnica
 # PROCESO             : TRANSFORMACION Y CARGA
 # TABLA(S) DESTINO    :  
@@ -13,12 +13,12 @@
 #     Esta script es invocada por lambda manualmente
 #*****************************************************************************************************
 import json
-from xml.dom import minidom
 import boto3
+from xml.dom import minidom
 from awsglue.context import GlueContext
 from pyspark.context import SparkContext
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType
-
+from datetime import datetime
 
 class Constante():
     """
@@ -401,8 +401,16 @@ class Dim():
         Returns
             query_tabla_final string:
                 Query de la información para guardar en la base de datos 
+            informacion list:
+                Lista con la información por defecto.
+            columnas list:
+                Lista de las columnas.
         -------
         """
+        query_tabla_final = ""
+        informacion = []
+        columnas = []
+        
         if table == constante.DIM_CLIENTE:
             query_tabla_final = """
                 SELECT COALESCE (t.cliente_id, 
@@ -411,13 +419,23 @@ class Dim():
                                 ELSE	0
                         END)
                     OVER( ORDER	BY d.codSeguridad ROWS UNBOUNDED PRECEDING) + (case when Maximo.MaxId = -1 then 0 else  Maximo.MaxId end)) AS cliente_id,
-                    d.codSeguridad cod_seguridad, d.numero, d.nombres nombre, d.primerApellido primer_apellido, d.segundoApellido segundo_apellido, d.ciudad, d.departamento, d.edad, coalesce(t.fecha_ejecucion, now()) fecha_ejecucion
+                    d.codSeguridad cod_seguridad, d.numero, d.nombres nombre, d.primerApellido primer_apellido, d.segundoApellido segundo_apellido, d.ciudad,
+                    d.departamento, d.edad, coalesce(t.fecha_ejecucion, now()) fecha_ejecucion
                             FROM (
                                 SELECT COALESCE(max(cliente_id), 0) as MaxId FROM {0}.{1}
                             ) Maximo, 
                             cliente d
                             LEFT OUTER JOIN {0}.{1} t ON d.codSeguridad = t.cod_seguridad
                 """.format(constante.NAME_BD, table)
+                
+            informacion = [
+                    (-1, "-1", "-1", "Sin Información", "Sin Información", "Sin Información", "Sin Información", "Sin Información", -1, datetime.now()), 
+                    (-2, "-2", "-2", "No Aplica", "No Aplica", "No Aplica", "No Aplica", "No Aplica", -2, datetime.now()),
+                    (-3, "-3", "-3", "Sin Información Fuente", "Sin Información Fuente", "Sin Información Fuente", "Sin Información Fuente", "Sin Información Fuente", -3, datetime.now())
+                ]
+                            
+            columnas = ["cliente_id", "codSeguridad", "numero", "nombre", "primerApellido", 
+                    "segundoApellido", "ciudad", "departamento", "edad", "fecha_ejecucion"]
         elif table == constante.DIM_PRODUCTO:
             
             query_tabla_final = """
@@ -435,7 +453,14 @@ class Dim():
                             LEFT OUTER JOIN {0}.{1} t ON d.ARTICULO = t.desc_producto
                 """.format(constante.NAME_BD, table)
                 
-        return query_tabla_final
+            informacion = [(-1,  "Sin Información", datetime.now()), 
+                    (-2, "No Aplica", datetime.now()),
+                    (-3, "Sin Información Fuente", datetime.now())]
+                    
+            columnas = ["producto_id", "desc_producto", "fecha_ejecucion"]
+                
+        return query_tabla_final, informacion, columnas
+        
     
     def get_tables_dim(self):
         """
@@ -508,30 +533,32 @@ class Main():
         #XML
         for archivo in self.xml.get_archivos():
             ls_list_valor, columns = self.xml.information_xml(archivo)
-            df_xml = self.pyspark.create_pyspark_data_frame (ls_list_valor, columns)
-            self.pyspark.create_or_replace_temp_view(df_xml, "cliente")     
+            df_xml = self.util.create_pyspark_data_frame (ls_list_valor, columns)
+            self.util.create_or_replace_temp_view(df_xml, "cliente")     
         
         df_xml.show()
         #csv
-        for archivo in self.pyspark.get_archivos():
+        for archivo in self.util.get_archivos():
             path = "s3://{0}/clientes/{1}".format(constante.BUCKET_NAME_RAW, archivo)
             formato = "csv"
             format_options={"withHeader": True}
-            df_csv = self.pyspark.load_informacion_pyspark(formato, path, format_options)
-            self.pyspark.create_or_replace_temp_view(df_csv, "ventas")
+            df_csv = self.util.load_informacion_pyspark(formato, path, format_options)
+            self.util.create_or_replace_temp_view(df_csv, "ventas")
         
-        self.pyspark.borrar_objetos(constante.BUCKET_NAME_ANALYTICS, constante.PREFIX_ANALYTICS)
+        self.util.borrar_objetos(constante.BUCKET_NAME_ANALYTICS, constante.PREFIX_ANALYTICS)
         
         for dim in self.dim.get_tables_dim():
-            query_tabla_final = self.dim.get_info_dim(dim)
-            df_table = self.pyspark.execute_query (query_tabla_final)
-            self.pyspark.create_or_replace_temp_view(df_table, dim)
-            self.pyspark.save_information_s3(constante.BUCKET_NAME_ANALYTICS, "financiera", df_table, dim,  "append")
+            query_tabla_final, informacion, columnas = self.dim.get_info_dim(dim)
+            df_table = self.util.execute_query (query_tabla_final)
+            df_table_defecto = self.util.create_pyspark_data_frame(informacion, columnas)
+            df_table = df_table.union(df_table_defecto)
+            self.util.create_or_replace_temp_view(df_table, dim)
+            self.util.save_information_s3(constante.BUCKET_NAME_ANALYTICS, "financiera", df_table, dim,  "append")
         
         for fact in self.fact.get_tables_fact():
             query_tabla_final = self.fact.get_info_fact(fact)
-            df_table = self.pyspark.execute_query (query_tabla_final)
-            self.pyspark.save_information_s3(constante.BUCKET_NAME_ANALYTICS, "financiera", df_table, fact,  "append")
+            df_table = self.util.execute_query (query_tabla_final)
+            self.util.save_information_s3(constante.BUCKET_NAME_ANALYTICS, "financiera", df_table, fact,  "append")
             
 sc = SparkContext.getOrCreate()
 glueContext = GlueContext(sc)
