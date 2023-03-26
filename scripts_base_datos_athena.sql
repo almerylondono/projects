@@ -29,7 +29,7 @@ LOCATION
 
 DROP TABLE IF EXISTS database_prueba_tecnica.fact_venta;
 
-CREATE EXTERNAL TABLE database_prueba_tecnicafact_venta(
+CREATE EXTERNAL TABLE database_prueba_tecnica.fact_venta(
   producto_id 	bigint, 
   cliente_id 	bigint, 
   cantidad 		decimal(10,2), 
