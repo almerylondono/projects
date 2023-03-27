@@ -493,7 +493,8 @@ class Fact():
         if table == constante.FACT_VENTA:
             query_tabla_final = """
                 SELECT COALESCE(p.producto_id, -1) producto_id, COALESCE(c.cliente_id, -1) cliente_id, cast(d.cantidad as decimal(10, 2)) cantidad, 
-                    cast(d.VALOR_UNITARIO as decimal(16, 6)) valor, now() fecha_ejecucion
+                    cast(d.VALOR_UNITARIO as decimal(16, 6)) valor, cast((d.VALOR_UNITARIO * d.cantidad) as decimal(16, 6))) valor_total,  
+                    now() fecha_ejecucion
                     FROM ventas d
                     LEFT OUTER JOIN {0} c ON COALESCE(d.ID_CLIENTE, "-3") = c.numero
                     LEFT OUTER JOIN {1} p ON COALESCE(d.ARTICULO, "-3") = p.desc_producto

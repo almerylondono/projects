@@ -33,7 +33,9 @@ CREATE EXTERNAL TABLE database_prueba_tecnica.fact_venta(
   producto_id 	bigint, 
   cliente_id 	bigint, 
   cantidad 		decimal(10,2), 
-  valor 		decimal(16,6))
+  valor 		decimal(16,6),
+  valor_total	decimal(16,6)
+  )
 STORED AS PARQUET
 LOCATION
   's3://dllo-analytics-prueba-tecnica/financiera/fact_venta'
